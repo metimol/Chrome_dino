@@ -1,112 +1,149 @@
-import pygame, sys, random
+import pygame
+import sys
+import random
 from pygame.color import THECOLORS
 
+# Initialize pygame
 pygame.init()
 
-#***SETTINGS***
+# Settings
 FPS = 60
-JUMP = 170
+GRAVITY = 1
+JUMP_STRENGTH = -20
 BACKGROUND = THECOLORS['white']
-WIDTH = 1500
-HEIGHT = 900
-LENGTH_ANIMATION = 4
-MIN_DISTANCE = 250
-MAX_DISTANCE = 800
-#***END_SETTINGS***
+WIDTH = 800
+HEIGHT = 600
+DINO_RUN_ANIM_SPEED = 5
+OBSTACLE_MIN_DISTANCE = 500
+OBSTACLE_MAX_DISTANCE = 1200
+GROUND_HEIGHT = 40
 
-class Tree(pygame.sprite.Sprite):
-	def __init__(self):
-		pygame.sprite.Sprite.__init__(self)
-		self.image = pygame.image.load(f'images/cactus_images/{random.randint(0, 2)}.png')
-		self.image = pygame.transform.scale(self.image, (60, 60))
-		self.rect = self.image.get_rect()
-		self.rect.center = (800, 400)
-	def update(self):
-		self.rect.x-=5
-		if self.rect.x<-50:
-			self.rect.x = 5000
+# Colors
+BLACK = (0, 0, 0)
 
+# Load assets
+def load_image(path, scale=None):
+    image = pygame.image.load(path)
+    if scale:
+        return pygame.transform.scale(image, scale)
+    return image
+
+# Classes
 class Dino(pygame.sprite.Sprite):
-	def __init__(self):
-		pygame.sprite.Sprite.__init__(self)
-		self.image = pygame.image.load('images/dino_images/1.png')
-		self.image = pygame.transform.scale(self.image, (60, 60))
-		self.rect = self.image.get_rect()
-		self.rect.center = (150, 400)
+    def __init__(self):
+        super().__init__()
+        self.images = [load_image(f'images/dino_images/{i}.png', (60, 60)) for i in range(1, 5)]
+        self.image = self.images[0]
+        self.rect = self.image.get_rect()
+        self.rect.bottom = HEIGHT - GROUND_HEIGHT
+        self.rect.left = 100
+        self.running_idx = 0
+        self.is_jumping = False
+        self.jump_speed = 0
+        self.anim_timer = 0
 
-class Floor(pygame.sprite.Sprite):
-	def __init__(self):
-		pygame.sprite.Sprite.__init__(self)
-		self.image = pygame.Surface((WIDTH, 2))
-		self.image.fill(THECOLORS['black'])
-		self.rect = self.image.get_rect()
-		self.rect.center = (WIDTH/2, 430)
+    def jump(self):
+        if not self.is_jumping:
+            self.is_jumping = True
+            self.jump_speed = JUMP_STRENGTH
 
-all_sprites = pygame.sprite.Group()
-dino, floor = Dino(), Floor()
-all_sprites.add(dino, floor)
-trees = []
-tree_x = 400
-for i in range(8):
-	tree = Tree()
-	tree.rect.x = tree_x+random.randint(MIN_DISTANCE, MAX_DISTANCE)
-	tree_x = tree.rect.x
-	all_sprites.add(tree)
-	trees.append(tree)
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-clock = pygame.time.Clock()
-timer_jump, dino_image, images_timer, sound_end_col = 0, 1, 0, 0
-sound_jump = pygame.mixer.Sound('sounds/jump.wav')
-sound_end = pygame.mixer.Sound('sounds/end.wav')
-play = True
+    def update(self):
+        if self.is_jumping:
+            self.rect.y += self.jump_speed
+            self.jump_speed += GRAVITY
+            if self.rect.bottom >= HEIGHT - GROUND_HEIGHT:
+                self.rect.bottom = HEIGHT - GROUND_HEIGHT
+                self.is_jumping = False
+        else:
+            if self.anim_timer > DINO_RUN_ANIM_SPEED:
+                self.anim_timer = 0
+                self.running_idx = (self.running_idx + 1) % len(self.images)
+                self.image = self.images[self.running_idx]
+            else:
+                self.anim_timer += 1
 
-while True:
-	touch = pygame.sprite.collide_rect(dino, floor)
-	
-	if play:
-		if touch:
-			if images_timer>LENGTH_ANIMATION:
-				images_timer = 0
-				if dino_image<4:
-					dino_image += 1
-				else:
-					dino_image = 1
-				image = pygame.image.load(f'images/dino_images/{dino_image}.png')
-				dino.image = pygame.transform.scale(image, (60, 60))
-			else:
-				images_timer+=1
-	
-	for event in pygame.event.get():
-		if event.type==pygame.QUIT:
-			pygame.quit()
-			sys.exit()
-		if event.type == pygame.KEYDOWN:
-			if event.key == pygame.K_UP:
-				if play:
-					if touch:
-						sound_jump.play()
-						timer_jump = 1
-	
-	if timer_jump>0:
-		if timer_jump<JUMP:
-			timer_jump+=7
-			dino.rect.y-=7
-		else:
-			timer_jump = 0
-	else:
-		if dino.rect.y<369:
-			dino.rect.y+=7
-	
-	hits = pygame.sprite.spritecollide(dino, trees, False)
-	if hits:
-		play = False
-		if sound_end_col==0:
-			sound_end.play()
-		sound_end_col = 1
-	
-	clock.tick(FPS)
-	if play:
-		all_sprites.update()
-	screen.fill(BACKGROUND)
-	all_sprites.draw(screen)
-	pygame.display.flip()
+class Ground(pygame.sprite.Sprite):
+    def __init__(self, x_pos):
+        super().__init__()
+        self.image = load_image('images/ground.png', (WIDTH, GROUND_HEIGHT))
+        self.rect = self.image.get_rect()
+        self.rect.x = x_pos
+        self.rect.y = HEIGHT - GROUND_HEIGHT
+
+    def update(self):
+        self.rect.x -= 5
+        if self.rect.right <= 0:
+            self.rect.left = WIDTH
+
+class Obstacle(pygame.sprite.Sprite):
+    def __init__(self, x_pos):
+        super().__init__()
+        self.image = load_image(f'images/cactus_images/{random.randint(0, 2)}.png', (60, 60))
+        self.rect = self.image.get_rect()
+        self.rect.bottom = HEIGHT - GROUND_HEIGHT
+        self.rect.left = x_pos
+
+    def update(self):
+        self.rect.x -= 5
+        if self.rect.right <= 0:
+            self.rect.left = WIDTH + random.randint(OBSTACLE_MIN_DISTANCE, OBSTACLE_MAX_DISTANCE)
+
+def main():
+    # Initialize screen and clock
+    screen = pygame.display.set_mode((WIDTH, HEIGHT))
+    pygame.display.set_caption('Chrome Dino Game')
+    clock = pygame.time.Clock()
+
+    # Create sprite groups
+    all_sprites = pygame.sprite.Group()
+    obstacles = pygame.sprite.Group()
+
+    # Create sprite instances
+    dino = Dino()
+    ground1 = Ground(0)
+    ground2 = Ground(WIDTH)
+    all_sprites.add(dino, ground1, ground2)
+
+    # Create initial obstacles
+    for i in range(4):
+        obstacle = Obstacle(WIDTH + i * 300 + random.randint(OBSTACLE_MIN_DISTANCE, OBSTACLE_MAX_DISTANCE))
+        all_sprites.add(obstacle)
+        obstacles.add(obstacle)
+
+    # Game loop
+    score = 0
+    running = True
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_UP or event.key == pygame.K_SPACE:
+                    dino.jump()
+
+        # Update sprites
+        all_sprites.update()
+
+        # Check for collisions
+        if pygame.sprite.spritecollideany(dino, obstacles):
+            running = False
+            pygame.mixer.Sound('sounds/end.wav').play()
+        
+        # Draw everything
+        screen.fill(BACKGROUND)
+        all_sprites.draw(screen)
+
+        # Display the score
+        score += 1
+        font = pygame.font.Font(None, 36)
+        score_text = font.render(f"Score: {score}", True, BLACK)
+        screen.blit(score_text, (10, 10))
+
+        pygame.display.flip()
+        clock.tick(FPS)
+
+    pygame.quit()
+    sys.exit()
+
+if __name__ == "__main__":
+    main()
